@@ -82,7 +82,7 @@ func updateFromGitHub() error {
 		return fmt.Errorf("unsupported architecture: %s", runtime.GOARCH)
 
 	}
-	url := fmt.Sprintf("https://github.com/marianozunino/goq/releases/latest/download/goq%s_%s.tar.gz", platform, arch)
+	url := fmt.Sprintf("https://github.com/marianozunino/goq/releases/latest/download/goq_%s_%s.tar.gz", platform, arch)
 	fmt.Printf("URL: %s\n", url)
 
 	// Download the file
@@ -163,4 +163,3 @@ func extractBinary(archivePath string) ([]byte, error) {
 
 	return nil, fmt.Errorf("binary not found in the archive")
 }
-
