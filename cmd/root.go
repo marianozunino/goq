@@ -29,8 +29,6 @@ import (
 
 	"github.com/adrg/xdg"
 	"github.com/fatih/color"
-	app "github.com/marianozunino/goq/internal"
-	"github.com/marianozunino/goq/internal/config"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -51,25 +49,33 @@ var rootCmd = &cobra.Command{
 
 This application connects to a RabbitMQ server, consumes messages from a specified queue,
 and writes them to a file while keeping the messages in the queue.`,
-	Run: run,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// You can bind cobra and viper in a few locations, but PersistencePreRunE on the root command works well
+		run(cmd, args)
+		return nil
+	},
 }
 
 func init() {
 	cobra.OnInitialize(initConfig)
 
+	rootCmd.PersistentFlags().StringP("url", "u", "", "RabbitMQ URL (e.g., localhost:5672)")
+	rootCmd.PersistentFlags().StringP("exchange", "e", "", "RabbitMQ exchange name")
+	rootCmd.PersistentFlags().StringP("output", "o", "messages.txt", "Output file name")
+	rootCmd.PersistentFlags().BoolP("amqps", "s", false, "Use AMQPS instead of AMQP")
+	rootCmd.PersistentFlags().StringP("virtualhost", "v", "", "RabbitMQ virtual host")
+	rootCmd.PersistentFlags().BoolP("skip-tls-verify", "k", false, "Skip TLS certificate verification (insecure)")
+	rootCmd.PersistentFlags().StringP("file-mode", "m", "overwrite", "File mode (append or overwrite)")
+	rootCmd.PersistentFlags().BoolP("pretty-print", "p", false, "Pretty print JSON messages")
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $XDG_CONFIG_HOME/goq/goq.yaml)")
-	rootCmd.Flags().StringP("url", "u", "", "RabbitMQ URL (e.g., localhost:5672)")
-	rootCmd.Flags().StringP("exchange", "e", "", "RabbitMQ exchange name")
-	rootCmd.Flags().StringP("queue", "q", "", "RabbitMQ queue name")
-	rootCmd.Flags().StringP("output", "o", "messages.txt", "Output file name")
-	rootCmd.Flags().BoolP("amqps", "s", false, "Use AMQPS instead of AMQP")
-	rootCmd.Flags().StringP("virtualhost", "v", "", "RabbitMQ virtual host")
-	rootCmd.Flags().BoolP("skip-tls-verify", "k", false, "Skip TLS certificate verification (insecure)")
-	rootCmd.Flags().BoolP("auto-ack", "a", false, "Automatically acknowledge messages")
-	rootCmd.Flags().StringP("file-mode", "m", "overwrite", "File mode (append or overwrite)")
-	rootCmd.Flags().BoolP("stop-after-consume", "c", false, "Stop consuming after getting all messages from the queue")
 
-	viper.BindPFlags(rootCmd.Flags())
+	rootCmd.AddGroup(&cobra.Group{
+		ID:    "available-commands",
+		Title: "Available Commands:",
+	})
+
+	// allow to attatch to multiple
+	viper.BindPFlags(rootCmd.PersistentFlags())
 }
 
 func initConfig() {
@@ -93,24 +99,6 @@ func run(cmd *cobra.Command, args []string) {
 		color.Red("Validation error: %v", err)
 		os.Exit(1)
 	}
-
-	cfg := config.New(
-		config.WithRabbitMQURL(fmt.Sprintf("%s://%s/%s", getProtocol(), viper.GetString("url"), viper.GetString("virtualhost"))),
-		config.WithExchange(viper.GetString("exchange")),
-		config.WithQueue(viper.GetString("queue")),
-		config.WithOutputFile(viper.GetString("output")),
-		config.WithUseAMQPS(viper.GetBool("amqps")),
-		config.WithVirtualHost(viper.GetString("virtualhost")),
-		config.WithSkipTLSVerification(viper.GetBool("skip-tls-verify")),
-		config.WithAutoAck(viper.GetBool("auto-ack")),
-		config.WithFileMode(viper.GetString("file-mode")),
-		config.WithStopAfterConsume(viper.GetBool("stop-after-consume")),
-	)
-
-	if err := app.Run(cfg); err != nil {
-		color.Red("Application error: %v", err)
-		os.Exit(1)
-	}
 }
 
 func validateRequiredFields() error {
@@ -121,12 +109,6 @@ func validateRequiredFields() error {
 	}
 	if _, err := url.Parse(fmt.Sprintf("%s://%s", getProtocol(), urlStr)); err != nil {
 		return fmt.Errorf("invalid RabbitMQ URL: %v", err)
-	}
-
-	// Validate queue
-	queue := viper.GetString("queue")
-	if queue == "" {
-		return fmt.Errorf("queue name is required")
 	}
 
 	// Validate output file

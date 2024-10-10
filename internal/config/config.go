@@ -18,6 +18,8 @@ type Config struct {
 	AutoAck             bool
 	FileMode            string
 	StopAfterConsume    bool
+	RoutingKeys         []string
+	PrettyPrint         bool
 }
 
 type Option func(*Config)
@@ -82,6 +84,18 @@ func WithStopAfterConsume(stop bool) Option {
 	}
 }
 
+func WithRoutingKeys(routingKeys []string) Option {
+	return func(c *Config) {
+		c.RoutingKeys = routingKeys
+	}
+}
+
+func WithPrettyPrint(prettyPrint bool) Option {
+	return func(c *Config) {
+		c.PrettyPrint = prettyPrint
+	}
+}
+
 func New(options ...Option) *Config {
 	c := &Config{
 		RabbitMQURL:         fmt.Sprintf("%s://%s/%s", getProtocol(), viper.GetString("url"), viper.GetString("virtualhost")),
@@ -94,6 +108,7 @@ func New(options ...Option) *Config {
 		AutoAck:             viper.GetBool("auto-ack"),
 		FileMode:            viper.GetString("file-mode"),
 		StopAfterConsume:    viper.GetBool("stop-after-consume"),
+		RoutingKeys:         viper.GetStringSlice("routing-keys"),
 	}
 
 	for _, option := range options {
@@ -103,7 +118,7 @@ func New(options ...Option) *Config {
 	return c
 }
 
-func (c *Config) PrettyPrint() (string, error) {
+func (c *Config) PrintConfig() (string, error) {
 	configJSON, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal config: %v", err)
@@ -117,4 +132,3 @@ func getProtocol() string {
 	}
 	return "amqp"
 }
-

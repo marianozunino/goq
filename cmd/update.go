@@ -42,7 +42,11 @@ import (
 func NewUpdateCmd() *cobra.Command {
 	updateCmd := &cobra.Command{
 		Use:   "update",
-		Short: "Update goq to the latest version",
+		Short: "Update the goq tool to the latest available version.",
+		Long: `Automatically update the goq tool to the latest available version from the official source.
+This command checks for updates, downloads the new version, and replaces the current executable with the updated one.`,
+		Example: `goq update`,
+		GroupID: "available-commands",
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := runSelfUpdate(http.DefaultClient, afero.NewOsFs(), os.Args[0]); err != nil {
 				fmt.Printf("Error: %v\n", err)

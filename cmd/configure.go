@@ -34,9 +34,13 @@ import (
 
 var configureCmd = &cobra.Command{
 	Use:   "configure",
-	Short: "Create a sample configuration file",
-	Long:  `Create a sample configuration file for rabbitmq-dumper in the default location.`,
-	Run:   runConfigure,
+	Short: "Generate a sample configuration file for goq.",
+	Long: `Generate a sample configuration file for goq in the default location.
+This file provides default settings for RabbitMQ connections and message handling, which can be customized for your environment.
+The configuration file simplifies using the tool by predefining connection parameters, output settings, and other preferences.`,
+	Example: `goq configure`,
+	GroupID: "available-commands",
+	Run:     runConfigure,
 }
 
 func init() {
@@ -46,20 +50,14 @@ func init() {
 func runConfigure(cmd *cobra.Command, args []string) {
 	exampleConfig := `# Configuration for rabbitmq-dumper
 
-# RabbitMQ server URL
-url: "localhost:5672"
-
 # RabbitMQ exchange name
 exchange: "my_exchange"
 
-# RabbitMQ queue name
-queue: "my_queue"
-
-# Output file name
-output: "messages.txt"
-
 # Use AMQPS instead of AMQP
 amqps: false
+
+# RabbitMQ server URL
+url: "localhost:5672"
 
 # RabbitMQ virtual host
 virtualhost: ""
@@ -67,14 +65,14 @@ virtualhost: ""
 # Skip TLS certificate verification (insecure)
 skip-tls-verify: false
 
-# Automatically acknowledge messages
-auto-ack: false
+# Output file name
+output: "messages.txt"
 
 # File mode (append or overwrite)
 file-mode: "overwrite"
 
-# Stop consuming after getting all messages from the queue
-stop-after-consume: false
+# Pretty print JSON messages
+pretty-print: false
 `
 
 	configPath, err := xdg.ConfigFile("goq/goq.yaml")

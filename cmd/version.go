@@ -35,9 +35,10 @@ func init() {
 }
 
 var versionCmd = &cobra.Command{
-	Use:   "version",
-	Short: "Print the version number of goq",
-	Long:  ``,
+	Use:     "version",
+	Short:   "Display the current version of the goq tool.",
+	Example: `goq version`,
+	GroupID: "available-commands",
 	Run: func(cmd *cobra.Command, args []string) {
 		version := VersionFromBuild()
 		fmt.Println(version)

@@ -33,7 +33,7 @@ func NewWriter(cfg *config.Config) (*Writer, error) {
 }
 
 func (w *Writer) WriteMessage(message string) error {
-	_, err := w.file.WriteString(fmt.Sprintf("Message: %s\n", message))
+	_, err := w.file.WriteString(fmt.Sprintf("%s\n", message))
 	if err != nil {
 		return fmt.Errorf("failed to write message to file: %v", err)
 	}
