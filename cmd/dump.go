@@ -46,18 +46,17 @@ Messages can be captured from an AMQP or AMQPS RabbitMQ server, with flexible TL
 		GroupID: "available-commands",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := config.New(
-
 				config.WithRabbitMQURL(fmt.Sprintf("%s://%s/%s", getProtocol(), viper.GetString("url"), viper.GetString("virtualhost"))),
 				config.WithExchange(viper.GetString("exchange")),
-				config.WithQueue(queue),
 				config.WithOutputFile(viper.GetString("output")),
 				config.WithUseAMQPS(viper.GetBool("amqps")),
 				config.WithVirtualHost(viper.GetString("virtualhost")),
 				config.WithSkipTLSVerification(viper.GetBool("skip-tls-verify")),
-				config.WithAutoAck(viper.GetBool("auto-ack")),
 				config.WithFileMode(viper.GetString("file-mode")),
-				config.WithStopAfterConsume(viper.GetBool("stop-after-consume")),
 				config.WithPrettyPrint(viper.GetBool("pretty-print")),
+				config.WithQueue(queue),
+				config.WithStopAfterConsume(stopAfterConsume),
+				config.WithAutoAck(autoAck),
 			)
 
 			return app.Dump(cfg)

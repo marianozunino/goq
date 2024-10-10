@@ -116,6 +116,11 @@ func bindQueueToRoutingKeys(consumer *rmq.Consumer, queueName string, routingKey
 
 // Helper function to process messages
 func processMessages(msgs <-chan rmq.Message, writer *filewriter.Writer, msgCount int, stopAfterConsume bool) error {
+	if msgCount == 0 && stopAfterConsume {
+		color.Yellow("No messages to consume. Exiting.")
+		return nil
+	}
+
 	consumedCount := 0
 	blue := color.New(color.FgBlue)
 
