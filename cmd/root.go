@@ -67,7 +67,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolP("skip-tls-verify", "k", false, "Skip TLS certificate verification (insecure)")
 	rootCmd.PersistentFlags().StringP("file-mode", "m", "overwrite", "File mode (append or overwrite)")
 	rootCmd.PersistentFlags().BoolP("pretty-print", "p", false, "Pretty print JSON messages")
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $XDG_CONFIG_HOME/goq/goq.yaml)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", xdg.ConfigHome+"/goq/goq.yaml", "config file")
 
 	rootCmd.AddGroup(&cobra.Group{
 		ID:    "available-commands",
