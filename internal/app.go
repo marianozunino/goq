@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/fatih/color"
 	"github.com/marianozunino/goq/internal/config"
@@ -105,11 +106,13 @@ func handleError(msg string, err error) error {
 
 // Helper function to bind the temporary queue to routing keys
 func bindQueueToRoutingKeys(consumer *rmq.Consumer, queueName string, routingKeys []string) error {
+	color.Green("Binding queue %q to routing keys", queueName)
 	for _, routingKey := range routingKeys {
-		if err := consumer.BindQueue(queueName, routingKey); err != nil {
-			return handleError(fmt.Sprintf("failed to bind queue %s to routing key %s", queueName, routingKey), err)
+		routingKeyTrimmed := strings.TrimSpace(routingKey)
+		if err := consumer.BindQueue(queueName, routingKeyTrimmed); err != nil {
+			return handleError(fmt.Sprintf("failed to bind queue %q to routing key %q", queueName, routingKeyTrimmed), err)
 		}
-		color.Green("Binding queue %s to routing key %s", queueName, routingKey)
+		color.Yellow("Bound routing key %q", routingKeyTrimmed)
 	}
 	return nil
 }
