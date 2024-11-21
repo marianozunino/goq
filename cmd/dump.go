@@ -57,6 +57,11 @@ Messages can be captured from an AMQP or AMQPS RabbitMQ server, with flexible TL
 				config.WithQueue(queue),
 				config.WithStopAfterConsume(stopAfterConsume),
 				config.WithAutoAck(autoAck),
+
+				config.WithIncludePatterns(viper.GetStringSlice("include-patterns")),
+				config.WithExcludePatterns(viper.GetStringSlice("exclude-patterns")),
+				config.WithMaxMessageSize(viper.GetInt("max-message-size")),
+				config.WithRegexFilter(viper.GetString("regex-filter")),
 			)
 
 			return app.Dump(cfg)

@@ -53,6 +53,12 @@ This command captures and dumps the received messages to a file for analysis or 
 				config.WithFileMode(viper.GetString("file-mode")),
 				config.WithPrettyPrint(viper.GetBool("pretty-print")),
 				config.WithRoutingKeys(routingKeys),
+
+				config.WithIncludePatterns(viper.GetStringSlice("include-patterns")),
+				config.WithExcludePatterns(viper.GetStringSlice("exclude-patterns")),
+				config.WithJSONFilter(viper.GetString("json-filter")),
+				config.WithMaxMessageSize(viper.GetInt("max-message-size")),
+				config.WithRegexFilter(viper.GetString("regex-filter")),
 			)
 
 			return app.Monitor(cfg)

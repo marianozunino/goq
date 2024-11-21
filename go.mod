@@ -4,6 +4,7 @@ go 1.23.0
 
 require (
 	github.com/Masterminds/semver/v3 v3.3.0
+	github.com/itchyny/gojq v0.12.16
 	github.com/minio/selfupdate v0.6.0
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/viper v1.19.0
@@ -12,6 +13,7 @@ require (
 
 require (
 	aead.dev/minisign v0.2.0 // indirect
+	github.com/itchyny/timefmt-go v0.1.6 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	golang.org/x/crypto v0.21.0 // indirect

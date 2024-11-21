@@ -69,6 +69,12 @@ func init() {
 	rootCmd.PersistentFlags().BoolP("pretty-print", "p", false, "Pretty print JSON messages")
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", xdg.ConfigHome+"/goq/goq.yaml", "config file")
 
+	rootCmd.PersistentFlags().StringSliceP("include-patterns", "i", []string{}, "Include messages containing these patterns")
+	rootCmd.PersistentFlags().StringSliceP("exclude-patterns", "x", []string{}, "Exclude messages containing these patterns")
+	rootCmd.PersistentFlags().StringP("json-filter", "j", "", "JSON filter expression")
+	rootCmd.PersistentFlags().IntP("max-message-size", "z", -1, "Maximum message size in bytes")
+	rootCmd.PersistentFlags().StringP("regex-filter", "R", "", "Regex pattern to filter messages")
+
 	rootCmd.AddGroup(&cobra.Group{
 		ID:    "available-commands",
 		Title: "Available Commands:",

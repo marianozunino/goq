@@ -2,8 +2,11 @@ package rmq
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
+	"strings"
 
+	"github.com/itchyny/gojq"
 	"github.com/marianozunino/goq/internal/config"
 	"github.com/streadway/amqp"
 )
@@ -80,7 +83,19 @@ func (c *Consumer) ConsumeMessages() (<-chan amqp.Delivery, error) {
 		return nil, fmt.Errorf("failed to register a consumer: %v", err)
 	}
 
-	return msgs, nil
+	filteredMsgs := make(chan amqp.Delivery)
+
+	go func() {
+		defer close(filteredMsgs)
+
+		for msg := range msgs {
+			if c.shouldProcessMessage(&msg) {
+				filteredMsgs <- msg
+			}
+		}
+	}()
+
+	return filteredMsgs, nil
 }
 
 func (c *Consumer) GetQueueInfo() (int, error) {
@@ -128,5 +143,93 @@ func (c *Consumer) ConsumeMessagesFromQueue(queueName string) (<-chan amqp.Deliv
 	if err != nil {
 		return nil, fmt.Errorf("failed to register a consumer for queue %s: %v", queueName, err)
 	}
-	return msgs, nil
+
+	filteredMsgs := make(chan amqp.Delivery)
+
+	go func() {
+		defer close(filteredMsgs)
+
+		for msg := range msgs {
+			if c.shouldProcessMessage(&msg) {
+				filteredMsgs <- msg
+			}
+		}
+	}()
+
+	return filteredMsgs, nil
+}
+
+func (c *Consumer) shouldProcessMessage(msg *Message) bool {
+	config := c.config.FilterConfig
+
+	// Size filtering
+	if config.MaxMessageSize > 0 && len(msg.Body) > config.MaxMessageSize {
+		return false
+	}
+
+	// Regex filtering
+	if config.CompileRegex != nil && !config.CompileRegex.Match(msg.Body) {
+		return false
+	}
+
+	body := string(msg.Body)
+
+	// Include patterns
+	if len(config.IncludePatterns) > 0 {
+		if !sliceContainsAny(config.IncludePatterns, body) {
+			return false
+		}
+	}
+
+	// Exclude patterns
+	if sliceContainsAny(config.ExcludePatterns, body) {
+		return false
+	}
+
+	// JSON filter
+	if config.JSONFilter != nil {
+		return matchJSONFilter(msg.Body, config.JSONFilter)
+	}
+
+	return true
+}
+
+func sliceContainsAny(patterns []string, body string) bool {
+	for _, pattern := range patterns {
+		if strings.Contains(body, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchJSONFilter(body []byte, query *gojq.Query) bool {
+	var data interface{}
+	if err := json.Unmarshal(body, &data); err != nil {
+		return false
+	}
+
+	iter := query.Run(data)
+	for {
+		v, ok := iter.Next()
+		if !ok {
+			break
+		}
+		if err, isErr := v.(error); isErr {
+			fmt.Printf("Error applying jq filter: %v\n", err)
+			return false
+		}
+
+		// Check if result is truthy
+		switch val := v.(type) {
+		case bool:
+			return val
+		case nil:
+			continue
+		default:
+			result, _ := json.MarshalIndent(v, "", "  ")
+			return strings.TrimSpace(string(result)) != ""
+		}
+	}
+	return false
 }
