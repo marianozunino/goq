@@ -28,6 +28,8 @@ import (
 	"os"
 	"path/filepath"
 
+	_ "embed"
+
 	"github.com/adrg/xdg"
 	"github.com/spf13/cobra"
 )
@@ -47,34 +49,10 @@ func init() {
 	rootCmd.AddCommand(configureCmd)
 }
 
+//go:embed example_config.yml
+var exampleConfig string
+
 func runConfigure(cmd *cobra.Command, args []string) {
-	exampleConfig := `# Configuration for rabbitmq-dumper
-
-# RabbitMQ exchange name
-exchange: "my_exchange"
-
-# Use AMQPS instead of AMQP
-amqps: false
-
-# RabbitMQ server URL
-url: "localhost:5672"
-
-# RabbitMQ virtual host
-virtualhost: ""
-
-# Skip TLS certificate verification (insecure)
-skip-tls-verify: false
-
-# Output file name
-output: "messages.txt"
-
-# File mode (append or overwrite)
-file-mode: "overwrite"
-
-# Pretty print JSON messages
-pretty-print: false
-`
-
 	configPath, err := xdg.ConfigFile("goq/goq.yaml")
 	if err != nil {
 		log.Fatalf("Failed to determine config file path: %v", err)

@@ -1,0 +1,24 @@
+# RabbitMQ exchange name
+exchange: "my_exchange"
+
+# Use AMQPS instead of AMQP
+amqps: false
+
+# RabbitMQ server URL
+url: "localhost:5672"
+
+# RabbitMQ virtual host
+virtualhost: ""
+
+# Skip TLS certificate verification (insecure)
+skip-tls-verify: false
+
+# Output file name
+output: "messages.txt"
+
+# File mode (append or overwrite)
+file-mode: "overwrite"
+
+# Pretty print JSON messages
+pretty-print: false
+
