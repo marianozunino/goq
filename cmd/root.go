@@ -95,9 +95,12 @@ func initConfig() {
 
 func run(cmd *cobra.Command, args []string) {
 	// Validate required fields
-	if err := validateRequiredFields(); err != nil {
-		color.Red("Validation error: %v", err)
-		os.Exit(1)
+	switch cmd.Use {
+	case "dump", "monitor":
+		if err := validateRequiredFields(); err != nil {
+			color.Red("Validation error: %v", err)
+			os.Exit(1)
+		}
 	}
 }
 
