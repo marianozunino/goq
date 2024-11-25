@@ -199,9 +199,14 @@ func (c *Config) PrintConfig() (string, error) {
 		"FilterConfig": map[string]interface{}{
 			"IncludePatterns": c.FilterConfig.IncludePatterns,
 			"ExcludePatterns": c.FilterConfig.ExcludePatterns,
-			"JSONFilter":      c.FilterConfig.JSONFilter.String(),
-			"MaxMessageSize":  c.FilterConfig.MaxMessageSize,
-			"RegexPattern":    c.FilterConfig.RegexPattern,
+			"JSONFilter": func() string {
+				if c.FilterConfig.JSONFilter != nil {
+					return c.FilterConfig.JSONFilter.String()
+				}
+				return ""
+			}(),
+			"MaxMessageSize": c.FilterConfig.MaxMessageSize,
+			"RegexPattern":   c.FilterConfig.RegexPattern,
 		},
 	}, "", "  ")
 	if err != nil {
