@@ -9,19 +9,28 @@ import (
 	"github.com/spf13/viper"
 )
 
+type ExporterKind string
+
+const (
+	ConsoleExporterKind ExporterKind = "console"
+	FileWriterKind      ExporterKind = "file"
+)
+
 type Config struct {
 	RabbitMQURL         string
 	Exchange            string
 	Queue               string
+	Writer              ExporterKind
 	OutputFile          string
+	FileMode            string
 	UseAMQPS            bool
 	VirtualHost         string
 	SkipTLSVerification bool
 	AutoAck             bool
-	FileMode            string
 	StopAfterConsume    bool
 	RoutingKeys         []string
 	PrettyPrint         bool
+	FullMessage         bool
 
 	FilterConfig struct {
 		IncludePatterns []string
@@ -123,6 +132,9 @@ func WithExcludePatterns(patterns []string) Option {
 // Modify the WithJSONFilter function
 func WithJSONFilter(jsonFilter string) Option {
 	return func(c *Config) {
+		if jsonFilter == "" {
+			return
+		}
 		// Parse the query during configuration
 		query, err := gojq.Parse(jsonFilter)
 		if err != nil {
@@ -149,19 +161,34 @@ func WithRegexFilter(pattern string) Option {
 	}
 }
 
+func WithFullMessage(fullMessage bool) Option {
+	return func(c *Config) {
+		c.FullMessage = fullMessage
+	}
+}
+
+func WithWriter(writer string) Option {
+	return func(c *Config) {
+		c.Writer = ExporterKind(writer)
+	}
+}
+
 func New(options ...Option) *Config {
 	c := &Config{
 		RabbitMQURL:         fmt.Sprintf("%s://%s/%s", getProtocol(), viper.GetString("url"), viper.GetString("virtualhost")),
 		Exchange:            viper.GetString("exchange"),
 		Queue:               viper.GetString("queue"),
+		Writer:              ExporterKind(viper.GetString("writer")),
 		OutputFile:          viper.GetString("output"),
+		FileMode:            viper.GetString("file-mode"),
 		UseAMQPS:            viper.GetBool("amqps"),
 		VirtualHost:         viper.GetString("virtualhost"),
 		SkipTLSVerification: viper.GetBool("skip-tls-verify"),
 		AutoAck:             viper.GetBool("auto-ack"),
-		FileMode:            viper.GetString("file-mode"),
 		StopAfterConsume:    viper.GetBool("stop-after-consume"),
 		RoutingKeys:         viper.GetStringSlice("routing-keys"),
+		PrettyPrint:         viper.GetBool("pretty-print"),
+		FullMessage:         viper.GetBool("full-message"),
 
 		FilterConfig: struct {
 			IncludePatterns []string
@@ -187,15 +214,17 @@ func (c *Config) PrintConfig() (string, error) {
 		"RabbitMQURL":         c.RabbitMQURL,
 		"Exchange":            c.Exchange,
 		"Queue":               c.Queue,
+		"Writer":              c.Writer,
 		"OutputFile":          c.OutputFile,
+		"FileMode":            c.FileMode,
 		"UseAMQPS":            c.UseAMQPS,
 		"VirtualHost":         c.VirtualHost,
 		"SkipTLSVerification": c.SkipTLSVerification,
 		"AutoAck":             c.AutoAck,
-		"FileMode":            c.FileMode,
 		"StopAfterConsume":    c.StopAfterConsume,
 		"RoutingKeys":         c.RoutingKeys,
 		"PrettyPrint":         c.PrettyPrint,
+		"FullMessage":         c.FullMessage,
 		"FilterConfig": map[string]interface{}{
 			"IncludePatterns": c.FilterConfig.IncludePatterns,
 			"ExcludePatterns": c.FilterConfig.ExcludePatterns,

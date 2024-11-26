@@ -41,18 +41,23 @@ func NewMonitorCmd() *cobra.Command {
 		Long: `Monitor RabbitMQ messages by consuming from a temporary queue that listens to specified routing keys.
 This command captures and dumps the received messages to a file for analysis or processing.`,
 		Example: `goq monitor -r "key1,key2" -o output.txt -s -v my_vhost`,
+		PreRunE: validateFlags,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := config.New(
 				config.WithRabbitMQURL(fmt.Sprintf("%s://%s/%s", getProtocol(), viper.GetString("url"), viper.GetString("virtualhost"))),
 				config.WithExchange(viper.GetString("exchange")),
+
+				config.WithWriter(viper.GetString("writer")),
 				config.WithOutputFile(viper.GetString("output")),
+				config.WithFileMode(viper.GetString("file-mode")),
+
 				config.WithUseAMQPS(viper.GetBool("amqps")),
 				config.WithVirtualHost(viper.GetString("virtualhost")),
 				config.WithSkipTLSVerification(viper.GetBool("skip-tls-verify")),
 				config.WithAutoAck(viper.GetBool("auto-ack")),
-				config.WithFileMode(viper.GetString("file-mode")),
 				config.WithPrettyPrint(viper.GetBool("pretty-print")),
 				config.WithRoutingKeys(routingKeys),
+				config.WithFullMessage(viper.GetBool("full-message")),
 
 				config.WithIncludePatterns(viper.GetStringSlice("include-patterns")),
 				config.WithExcludePatterns(viper.GetStringSlice("exclude-patterns")),

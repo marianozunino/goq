@@ -3,6 +3,7 @@ module github.com/marianozunino/goq
 go 1.23.0
 
 require (
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/itchyny/gojq v0.12.16
 	github.com/marianozunino/selfupdater v1.0.1
 	github.com/spf13/cobra v1.8.1

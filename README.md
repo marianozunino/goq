@@ -23,25 +23,34 @@ Usage:
   goq [command]
 
 Available Commands:
+  configure   Generate a sample configuration file for goq.
+  dump        Dump messages from a RabbitMQ queue to a file.
+  monitor     Monitor RabbitMQ messages using routing keys and a temporary queue.
+  update      Update the goq tool to the latest available version.
+  version     Display the current version of the goq tool.
+
+Additional Commands:
   completion  Generate the autocompletion script for the specified shell
-  configure   Create a sample configuration file
-  dump        Dump RabbitMQ messages to a file
   help        Help about any command
-  monitor     Create a temporary queue and consume messages from it having the specified routing keys
-  update      Update GOQ to the latest version
-  version     Print the version number of GOQ
 
 Flags:
-  -s, --amqps                Use AMQPS instead of AMQP
-      --config string        Config file (default is $XDG_CONFIG_HOME/goq/goq.yaml)
-  -e, --exchange string      RabbitMQ exchange name
-  -m, --file-mode string     File mode (append or overwrite) (default "overwrite")
-  -h, --help                 Help for GOQ
-  -o, --output string        Output file name (default "messages.txt")
-  -k, --skip-tls-verify      Skip TLS certificate verification (insecure)
-  -u, --url string           RabbitMQ URL (e.g., localhost:5672)
-  -v, --virtualhost string   RabbitMQ virtual host
-  -p, --pretty-print         Pretty print JSON messages
+  -s, --amqps                      Use AMQPS instead of AMQP
+      --config string              config file (default "/home/forbi/.config/goq/goq.yaml")
+  -e, --exchange string            RabbitMQ exchange name
+  -x, --exclude-patterns strings   Exclude messages containing these patterns
+  -m, --file-mode string           File mode (append or overwrite, only valid for file writer) (default "overwrite")
+  -f, --full-message               Print full message
+  -h, --help                       help for goq
+  -i, --include-patterns strings   Include messages containing these patterns
+  -j, --json-filter string         JSON filter expression
+  -z, --max-message-size int       Maximum message size in bytes (default -1)
+  -o, --output string              Output file name (required when writer is 'file')
+  -p, --pretty-print               Pretty print JSON messages
+  -R, --regex-filter string        Regex pattern to filter messages
+  -k, --skip-tls-verify            Skip TLS certificate verification (insecure)
+  -u, --url string                 RabbitMQ URL (e.g., localhost:5672)
+  -v, --virtualhost string         RabbitMQ virtual host
+  -w, --writer string              Output writer type (console or file) (default "file")
 
 Use "goq [command] --help" for more information about a command.
 ```
@@ -70,6 +79,10 @@ Use "goq [command] --help" for more information about a command.
 5. **Append to an existing output file**:
    ```bash
    goq dump -u localhost:5672 -q my_queue -m append -o existing_output.txt
+   ```
+6. **Print the full message including headers, exchange, and timestamp:**
+   ```bash
+   goq dump -u localhost:5672 -q my_queue -f
    ```
 
 ## Configuration
@@ -102,6 +115,9 @@ file-mode: "overwrite"
 
 # Pretty print JSON messages
 pretty-print: true
+
+# Print full message including headers, exchange, timestamp, and body
+full-message: false
 ```
 
 When using a config file, the flags will override the values in the config file. It's useful to combine the config file with command-line flags for more flexibility.

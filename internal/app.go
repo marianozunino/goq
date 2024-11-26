@@ -1,175 +1,135 @@
 package app
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"log"
-	"os"
-	"strings"
 
 	"github.com/fatih/color"
 	"github.com/marianozunino/goq/internal/config"
-	"github.com/marianozunino/goq/internal/filewriter"
+	"github.com/marianozunino/goq/internal/exporter"
 	"github.com/marianozunino/goq/internal/rmq"
+	"github.com/streadway/amqp"
 )
 
-// Dump contains the main application logic
-func Dump(cfg *config.Config) error {
-	if err := printConfig(cfg); err != nil {
-		return err
+// MessageProcessor handles the core logic of processing messages
+type MessageProcessor struct {
+	config   *config.Config
+	consumer *rmq.Consumer
+	exporter exporter.Exporter
+	msgCount int
+}
+
+func NewMessageProcessor(cfg *config.Config) (*MessageProcessor, error) {
+	// Print configuration
+	configJSON, err := cfg.PrintConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to print config: %v", err)
 	}
 
+	color.Green("Configuration used:")
+	fmt.Println(configJSON)
+
+	// Create consumer
 	consumer, err := rmq.NewConsumer(cfg)
 	if err != nil {
-		return handleError("failed to create consumer", err)
+		return nil, fmt.Errorf("failed to create consumer: %v", err)
 	}
-	defer consumer.Close()
 
-	writer, err := filewriter.NewWriter(cfg)
+	// Create exporter
+	exp, err := exporter.NewExporter(cfg)
 	if err != nil {
-		return handleError("failed to create file writer", err)
+		consumer.Close()
+		return nil, fmt.Errorf("failed to create file exporter: %v", err)
 	}
-	defer writer.Close()
 
-	msgCount, err := consumer.GetQueueInfo()
+	// Get queue message count (only for non-empty queue name)
+	var msgCount int
+	if cfg.Queue != "" {
+		msgCount, err = consumer.GetQueueInfo()
+		if err != nil {
+			consumer.Close()
+			exp.Close()
+			return nil, fmt.Errorf("failed to get queue info: %v", err)
+		}
+		// Print queue information only if queue exists
+		color.Cyan("Number of messages in the queue: %d", msgCount)
+	}
+
+	return &MessageProcessor{
+		config:   cfg,
+		consumer: consumer,
+		exporter: exp,
+		msgCount: msgCount,
+	}, nil
+}
+
+// Dump processes messages from the main queue
+func (mp *MessageProcessor) Dump() error {
+	defer mp.consumer.Close()
+	defer mp.exporter.Close()
+
+	// Consume messages
+	msgs, err := mp.consumer.Consume()
 	if err != nil {
-		return handleError("failed to get queue info", err)
-	}
-	color.Cyan("Number of messages in the queue: %d", msgCount)
-
-	msgs, err := consumer.ConsumeMessages()
-	if err != nil {
-		return handleError("failed to consume messages", err)
+		return fmt.Errorf("failed to consume messages: %v", err)
 	}
 
-	if cfg.StopAfterConsume {
+	if mp.config.StopAfterConsume {
 		color.Yellow("Stopping after consuming all messages")
 	}
 
 	log.Println("Waiting for messages. To exit press CTRL+C")
-	return processMessages(msgs, writer, msgCount, cfg.StopAfterConsume)
+	return mp.processMessages(msgs)
 }
 
-// Monitor monitors messages on a temporary queue
-func Monitor(cfg *config.Config) error {
-	if err := printConfig(cfg); err != nil {
-		return err
-	}
+// Monitor creates a temporary queue and processes messages
+func (mp *MessageProcessor) Monitor() error {
+	defer mp.consumer.Close()
+	defer mp.exporter.Close()
 
-	consumer, err := rmq.NewConsumer(cfg)
+	// Consume messages from temporary queue
+	msgs, err := mp.consumer.Consume()
 	if err != nil {
-		return handleError("failed to create consumer", err)
-	}
-	defer consumer.Close()
-
-	tempQueue, err := consumer.DeclareTemporaryQueue()
-	if err != nil {
-		return handleError("failed to declare temporary queue", err)
+		return fmt.Errorf("failed to consume messages: %v", err)
 	}
 
-	if err := bindQueueToRoutingKeys(consumer, tempQueue.Name, cfg.RoutingKeys); err != nil {
-		return err
-	}
-
-	color.Cyan("Monitoring messages on temporary queue: %s", tempQueue.Name)
-
-	msgs, err := consumer.ConsumeMessagesFromQueue(tempQueue.Name)
-	if err != nil {
-		return handleError("failed to consume messages", err)
-	}
-
-	writer, err := filewriter.NewWriter(cfg)
-	if err != nil {
-		return handleError("failed to create file writer", err)
-	}
-	defer writer.Close()
-
-	return logReceivedMessages(msgs, writer, cfg.PrettyPrint)
+	return mp.processMessages(msgs)
 }
 
-// Helper function to print the configuration
-func printConfig(cfg *config.Config) error {
-	configJSON, err := cfg.PrintConfig()
-	if err != nil {
-		return fmt.Errorf("failed to print config: %v", err)
-	}
-	color.Green("Configuration used:")
-	fmt.Println(configJSON)
-	return nil
-}
-
-// Helper function to handle errors
-func handleError(msg string, err error) error {
-	return fmt.Errorf("%s: %v", msg, err)
-}
-
-// Helper function to bind the temporary queue to routing keys
-func bindQueueToRoutingKeys(consumer *rmq.Consumer, queueName string, routingKeys []string) error {
-	color.Green("Binding queue %q to routing keys", queueName)
-	for _, routingKey := range routingKeys {
-		routingKeyTrimmed := strings.TrimSpace(routingKey)
-		if err := consumer.BindQueue(queueName, routingKeyTrimmed); err != nil {
-			return handleError(fmt.Sprintf("failed to bind queue %q to routing key %q", queueName, routingKeyTrimmed), err)
-		}
-		color.Yellow("Bound routing key %q", routingKeyTrimmed)
-	}
-	return nil
-}
-
-// Helper function to process messages
-func processMessages(msgs <-chan rmq.Message, writer *filewriter.Writer, msgCount int, stopAfterConsume bool) error {
-	if msgCount == 0 && stopAfterConsume {
+// processMessages handles the core message processing logic
+func (mp *MessageProcessor) processMessages(msgs <-chan amqp.Delivery) error {
+	if mp.msgCount == 0 && mp.config.StopAfterConsume {
 		color.Yellow("No messages to consume. Exiting.")
 		return nil
 	}
 
-	consumedCount := 0
 	blue := color.New(color.FgBlue)
+	consumedCount := 0
 
 	for msg := range msgs {
-		if err := writer.WriteMessage(string(msg.Body)); err != nil {
+		// Write message to exporter
+		if err := mp.exporter.WriteMessage(msg); err != nil {
 			log.Printf("Failed to write message: %v", err)
+			continue
 		}
-		consumedCount++
-		blue.Printf("\rMessages dumped: %d/%d", consumedCount, msgCount)
-		os.Stdout.Sync() // Flush the output
 
-		if stopAfterConsume && consumedCount >= msgCount {
+		consumedCount++
+
+		// Handle different output formats
+		switch mp.config.Writer {
+		case config.FileWriterKind:
+			blue.Printf("\rMessages processed: %d/%d", consumedCount, mp.msgCount)
+		case config.ConsoleExporterKind:
+			blue.Println("*****")
+		}
+
+		// Stop after consuming all messages if configured
+		if mp.config.StopAfterConsume && consumedCount >= mp.msgCount {
 			break
 		}
 	}
+
 	fmt.Println()
-	color.Green("All messages have been consumed. Exiting.")
+	color.Green("Message processing complete.")
 	return nil
-}
-
-// Helper function to log received messages
-func logReceivedMessages(msgs <-chan rmq.Message, writer *filewriter.Writer, prettyPrint bool) error {
-	blue := color.New(color.FgBlue)
-
-	for msg := range msgs {
-		if err := writer.WriteMessage(string(msg.Body)); err != nil {
-			log.Printf("Failed to write message: %v", err)
-		}
-		if prettyPrint {
-			blue.Printf("%s\n", prettyPrintJson(msg.Body))
-		} else {
-			blue.Printf("%s\n", string(msg.Body))
-		}
-		msg.Ack(true)
-	}
-
-	color.Green("Consumer disconnected. Exiting monitoring.")
-	return nil
-}
-
-func prettyPrintJson(b []byte) string {
-	var prettyJSON bytes.Buffer
-	error := json.Indent(&prettyJSON, b, "", "  ")
-	if error != nil {
-		log.Println("Failed to parse JSON. Error:", error)
-	}
-
-	return prettyJSON.String()
 }
