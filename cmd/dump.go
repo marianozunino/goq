@@ -44,19 +44,27 @@ This command provides options for automatically acknowledging messages, controll
 Messages can be captured from an AMQP or AMQPS RabbitMQ server, with flexible TLS and virtual host settings.`,
 		Example: `goq dump -q my_queue -o output.txt -a -c`,
 		GroupID: "available-commands",
+		PreRunE: validateFlags,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := config.New(
 				config.WithRabbitMQURL(fmt.Sprintf("%s://%s/%s", getProtocol(), viper.GetString("url"), viper.GetString("virtualhost"))),
 				config.WithExchange(viper.GetString("exchange")),
+
 				config.WithOutputFile(viper.GetString("output")),
+				config.WithFileMode(viper.GetString("file-mode")),
+
+				config.WithWriter(viper.GetString("writer")),
+				config.WithOutputFile(viper.GetString("output")),
+				config.WithFileMode(viper.GetString("file-mode")),
+
 				config.WithUseAMQPS(viper.GetBool("amqps")),
 				config.WithVirtualHost(viper.GetString("virtualhost")),
 				config.WithSkipTLSVerification(viper.GetBool("skip-tls-verify")),
-				config.WithFileMode(viper.GetString("file-mode")),
 				config.WithPrettyPrint(viper.GetBool("pretty-print")),
 				config.WithQueue(queue),
 				config.WithStopAfterConsume(stopAfterConsume),
 				config.WithAutoAck(autoAck),
+				config.WithFullMessage(viper.GetBool("full-message")),
 
 				config.WithIncludePatterns(viper.GetStringSlice("include-patterns")),
 				config.WithExcludePatterns(viper.GetStringSlice("exclude-patterns")),
