@@ -2,11 +2,13 @@ package rmq
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/fatih/color"
 	"github.com/marianozunino/goq/internal/config"
+	"github.com/marianozunino/goq/internal/filter"
 	"github.com/streadway/amqp"
 )
 
@@ -14,19 +16,34 @@ type Consumer struct {
 	conn   *amqp.Connection
 	ch     *amqp.Channel
 	config *config.Config
+	filter *filter.MessageFilter
+
+	totalMessages    int
+	consumedMessages int
+}
+
+type ConsumerStatus struct {
+	TotalMessages    int
+	ConsumedMessages int
+	FilteredMessages int
+	Complete         bool
+	Message          *amqp.Delivery
 }
 
 func NewConsumer(cfg *config.Config) (*Consumer, error) {
+	msgFilter := filter.NewMessageFilter(cfg)
+	if errs := msgFilter.GetCompilationErrors(); len(errs) > 0 {
+		return nil, errors.Join(errs...)
+	}
+
 	var conn *amqp.Connection
 	var err error
-
 	if cfg.SkipTLSVerification {
 		tlsConfig := &tls.Config{InsecureSkipVerify: true}
 		conn, err = amqp.DialTLS(cfg.RabbitMQURL, tlsConfig)
 	} else {
 		conn, err = amqp.Dial(cfg.RabbitMQURL)
 	}
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to RabbitMQ: %v", err)
 	}
@@ -37,11 +54,39 @@ func NewConsumer(cfg *config.Config) (*Consumer, error) {
 		return nil, fmt.Errorf("failed to open channel: %v", err)
 	}
 
-	return &Consumer{
+	c := &Consumer{
 		conn:   conn,
 		ch:     ch,
 		config: cfg,
-	}, nil
+		filter: msgFilter,
+	}
+
+	if c.config.Queue == "" {
+		queue, err := c.declareTemporaryQueue()
+		if err != nil {
+			return nil, fmt.Errorf("failed to declare temporary queue: %v", err)
+		}
+		c.config.Queue = queue.Name
+		c.config.AutoAck = true
+
+		err = c.bindQueueToRoutingKeys(queue.Name)
+		if err != nil {
+			return nil, fmt.Errorf("failed to bind queue to routing keys: %v", err)
+		}
+	}
+
+	if err = c.ch.QueueBind(c.config.Queue, "", c.config.Exchange, false, nil); err != nil {
+		return nil, fmt.Errorf("failed to bind queue: %v", err)
+	}
+
+	queue, err := c.ch.QueueInspect(c.config.Queue)
+	c.totalMessages = int(queue.Messages)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect queue: %v", err)
+	}
+
+	return c, nil
 }
 
 // DeclareTemporaryQueue creates a temporary queue that will be deleted when the consumer disconnects
@@ -57,68 +102,53 @@ func (c *Consumer) declareTemporaryQueue() (amqp.Queue, error) {
 	)
 }
 
-func (c *Consumer) Consume() (<-chan amqp.Delivery, error) {
-	if c.config.Queue == "" {
-		queue, err := c.declareTemporaryQueue()
-		if err != nil {
-			return nil, fmt.Errorf("failed to declare temporary queue: %v", err)
-		}
-		c.config.Queue = queue.Name
-		c.config.AutoAck = true
-
-		err = c.bindQueueToRoutingKeys(queue.Name)
-		if err != nil {
-			return nil, fmt.Errorf("failed to bind queue to routing keys: %v", err)
-		}
-	}
-
-	err := c.ch.QueueBind(c.config.Queue, "", c.config.Exchange, false, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to bind queue: %v", err)
-	}
-
+func (c *Consumer) Consume() (<-chan ConsumerStatus, error) {
 	msgs, err := c.ch.Consume(
-		c.config.Queue,   // queue
-		"",               // consumer
-		c.config.AutoAck, // auto-ack
-		false,            // exclusive
-		false,            // no-local
-		false,            // no-wait
-		nil,              // args
+		c.config.Queue,
+		"",
+		c.config.AutoAck,
+		false,
+		false,
+		false,
+		nil,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register consumer: %v", err)
 	}
-
-	color.Cyan("Monitoring messages on temporary queue: %s", c.config.Queue)
-
-	filteredMsgs := make(chan amqp.Delivery)
-
-	go func() {
-		defer close(filteredMsgs)
+	statusCh := make(chan ConsumerStatus)
+	go func(c *Consumer) {
+		defer close(statusCh)
+		filteredCount := 0
 		for msg := range msgs {
-			if c.filterMessage(&msg) {
-				filteredMsgs <- msg
+			c.consumedMessages++
+			var filteredMsg *amqp.Delivery
+			if c.filter.Filter(&msg) {
+				filteredMsg = &msg
+			} else {
+				filteredCount++
+			}
+
+			// Send status update
+			statusCh <- ConsumerStatus{
+				TotalMessages:    c.totalMessages,
+				ConsumedMessages: c.consumedMessages,
+				FilteredMessages: filteredCount,
+				Complete:         c.consumedMessages == c.totalMessages,
+				Message:          filteredMsg,
+			}
+
+			if c.consumedMessages == c.totalMessages {
+				break
 			}
 		}
-	}()
-
-	return filteredMsgs, nil
-}
-
-func (c *Consumer) GetQueueInfo() (int, error) {
-	queue, err := c.ch.QueueInspect(c.config.Queue)
-	if err != nil {
-		return 0, fmt.Errorf("failed to inspect queue: %v", err)
-	}
-	return queue.Messages, nil
+	}(c)
+	return statusCh, nil
 }
 
 // bindQueueToRoutingKeys binds the queue to specified routing keys
 func (c *Consumer) bindQueueToRoutingKeys(queueName string) error {
 	for _, routingKey := range c.config.RoutingKeys {
 		routingKeyTrimmed := strings.TrimSpace(routingKey)
-
 		if err := c.ch.QueueBind(
 			queueName,
 			routingKey,
@@ -128,7 +158,6 @@ func (c *Consumer) bindQueueToRoutingKeys(queueName string) error {
 		); err != nil {
 			return fmt.Errorf("failed to bind queue %q to routing key %q: %v", queueName, routingKeyTrimmed, err)
 		}
-
 		color.Yellow("Bound routing key %q", routingKey)
 		color.Green("Binding queue %q to routing keys", queueName)
 	}

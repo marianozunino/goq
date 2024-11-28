@@ -34,23 +34,21 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var configureCmd = &cobra.Command{
-	Use:   "configure",
-	Short: "Generate a sample configuration file for goq.",
-	Long: `Generate a sample configuration file for goq in the default location.
-This file provides default settings for RabbitMQ connections and message handling, which can be customized for your environment.
-The configuration file simplifies using the tool by predefining connection parameters, output settings, and other preferences.`,
-	Example: `goq configure`,
-	GroupID: "available-commands",
-	Run:     runConfigure,
-}
-
-func init() {
-	rootCmd.AddCommand(configureCmd)
-}
-
 //go:embed example_config.yml
 var exampleConfig string
+
+func NewConfigureCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "configure",
+		Short: "Generate a sample configuration file for goq.",
+		Long: `Generate a sample configuration file for goq in the default location.
+This file provides default settings for RabbitMQ connections and message handling, which can be customized for your environment.
+The configuration file simplifies using the tool by predefining connection parameters, output settings, and other preferences.`,
+		Example: `goq configure`,
+		GroupID: "available-commands",
+		Run:     runConfigure,
+	}
+}
 
 func runConfigure(cmd *cobra.Command, args []string) {
 	configPath, err := xdg.ConfigFile("goq/goq.yaml")

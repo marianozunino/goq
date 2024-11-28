@@ -21,7 +21,9 @@ THE SOFTWARE.
 */
 package main
 
-import "github.com/marianozunino/goq/cmd"
+import (
+	"github.com/marianozunino/goq/cmd"
+)
 
 func main() {
 	cmd.Execute()

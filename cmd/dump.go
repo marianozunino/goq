@@ -19,73 +19,30 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
-
 package cmd
 
 import (
-	"fmt"
-
 	app "github.com/marianozunino/goq/internal"
-	"github.com/marianozunino/goq/internal/config"
+	"github.com/marianozunino/goq/pkg/config"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
+// NewDumpCmd creates the `dump` command.
 func NewDumpCmd() *cobra.Command {
-	var queue string
-	var autoAck bool
-	var stopAfterConsume bool
-
-	dumpCmd := &cobra.Command{
-		Use:   "dump",
-		Short: "Dump messages from a RabbitMQ queue to a file.",
-		Long: `Dump messages from the specified RabbitMQ queue to a file.
-This command provides options for automatically acknowledging messages, controlling when consumption stops, and configuring file output behavior.
-Messages can be captured from an AMQP or AMQPS RabbitMQ server, with flexible TLS and virtual host settings.`,
-		Example: `goq dump -q my_queue -o output.txt -a -c`,
-		GroupID: "available-commands",
-		PreRunE: validateFlags,
+	cmd := &cobra.Command{
+		Use:     "dump",
+		Short:   "Dump messages from a RabbitMQ queue",
+		Long:    "Dump messages from a specified RabbitMQ queue with flexible filtering and output options.",
+		Example: "goq dump -q my_queue -o output.txt",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg := config.New(
-				config.WithRabbitMQURL(fmt.Sprintf("%s://%s/%s", getProtocol(), viper.GetString("url"), viper.GetString("virtualhost"))),
-				config.WithExchange(viper.GetString("exchange")),
-
-				config.WithOutputFile(viper.GetString("output")),
-				config.WithFileMode(viper.GetString("file-mode")),
-
-				config.WithWriter(viper.GetString("writer")),
-				config.WithOutputFile(viper.GetString("output")),
-				config.WithFileMode(viper.GetString("file-mode")),
-
-				config.WithUseAMQPS(viper.GetBool("amqps")),
-				config.WithVirtualHost(viper.GetString("virtualhost")),
-				config.WithSkipTLSVerification(viper.GetBool("skip-tls-verify")),
-				config.WithPrettyPrint(viper.GetBool("pretty-print")),
-				config.WithQueue(queue),
-				config.WithStopAfterConsume(stopAfterConsume),
-				config.WithAutoAck(autoAck),
-				config.WithFullMessage(viper.GetBool("full-message")),
-
-				config.WithIncludePatterns(viper.GetStringSlice("include-patterns")),
-				config.WithExcludePatterns(viper.GetStringSlice("exclude-patterns")),
-				config.WithMaxMessageSize(viper.GetInt("max-message-size")),
-				config.WithRegexFilter(viper.GetString("regex-filter")),
-			)
-
-			return app.Dump(cfg)
+			return app.Dump(config.CreateCommonConfig(cmd))
 		},
 	}
 
-	dumpCmd.Flags().SortFlags = false
-	dumpCmd.Flags().StringVarP(&queue, "queue", "q", "", "RabbitMQ queue name")
-	dumpCmd.Flags().BoolVarP(&autoAck, "auto-ack", "a", false, "Auto ack messages")
-	dumpCmd.Flags().BoolVarP(&stopAfterConsume, "stop-after-consume", "c", false, "Stop after consuming messages")
+	cmd.Flags().StringP("queue", "q", "", "RabbitMQ queue name (required)")
+	cmd.Flags().BoolP("auto-ack", "a", false, "Automatically acknowledge messages")
+	cmd.Flags().BoolP("stop-after-consume", "c", false, "Stop after consuming messages")
+	cmd.MarkFlagRequired("queue")
 
-	dumpCmd.MarkFlagRequired("queue")
-
-	return dumpCmd
-}
-
-func init() {
-	rootCmd.AddCommand(NewDumpCmd())
+	return cmd
 }

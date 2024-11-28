@@ -22,62 +22,27 @@ THE SOFTWARE.
 package cmd
 
 import (
-	"fmt"
-
 	app "github.com/marianozunino/goq/internal"
-	"github.com/marianozunino/goq/internal/config"
+	"github.com/marianozunino/goq/pkg/config"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
-var routingKeys []string
-
+// NewMonitorCmd creates the `monitor` command.
 func NewMonitorCmd() *cobra.Command {
-	monitorCmd := &cobra.Command{
+	cmd := &cobra.Command{
 		Use:     "monitor",
 		Aliases: []string{"mon"},
-		GroupID: "available-commands",
-		Short:   "Monitor RabbitMQ messages using routing keys and a temporary queue.",
-		Long: `Monitor RabbitMQ messages by consuming from a temporary queue that listens to specified routing keys.
-This command captures and dumps the received messages to a file for analysis or processing.`,
-		Example: `goq monitor -r "key1,key2" -o output.txt -s -v my_vhost`,
-		PreRunE: validateFlags,
+		Short:   "Monitor RabbitMQ messages using routing keys",
+		Long:    "Monitor RabbitMQ messages by consuming from a temporary queue with specified routing keys.",
+		Example: "goq monitor -r \"user.created,user.updated\" -o output.txt",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg := config.New(
-				config.WithRabbitMQURL(fmt.Sprintf("%s://%s/%s", getProtocol(), viper.GetString("url"), viper.GetString("virtualhost"))),
-				config.WithExchange(viper.GetString("exchange")),
-
-				config.WithWriter(viper.GetString("writer")),
-				config.WithOutputFile(viper.GetString("output")),
-				config.WithFileMode(viper.GetString("file-mode")),
-
-				config.WithUseAMQPS(viper.GetBool("amqps")),
-				config.WithVirtualHost(viper.GetString("virtualhost")),
-				config.WithSkipTLSVerification(viper.GetBool("skip-tls-verify")),
-				config.WithAutoAck(viper.GetBool("auto-ack")),
-				config.WithPrettyPrint(viper.GetBool("pretty-print")),
-				config.WithRoutingKeys(routingKeys),
-				config.WithFullMessage(viper.GetBool("full-message")),
-
-				config.WithIncludePatterns(viper.GetStringSlice("include-patterns")),
-				config.WithExcludePatterns(viper.GetStringSlice("exclude-patterns")),
-				config.WithJSONFilter(viper.GetString("json-filter")),
-				config.WithMaxMessageSize(viper.GetInt("max-message-size")),
-				config.WithRegexFilter(viper.GetString("regex-filter")),
-			)
-
-			return app.Monitor(cfg)
+			return app.Monitor(config.CreateCommonConfig(cmd))
 		},
 	}
 
-	// Allow to pass an array of routing keys to monitor
-	monitorCmd.Flags().SortFlags = false
-	monitorCmd.Flags().StringSliceVarP(&routingKeys, "routing-keys", "r", nil, "List of routing keys to monitor")
-	monitorCmd.MarkFlagRequired("routing-keys")
+	cmd.Flags().StringSliceP("routing-keys", "r", nil, "List of routing keys to monitor (required)")
+	cmd.Flags().BoolP("auto-ack", "a", false, "Automatically acknowledge messages")
+	cmd.MarkFlagRequired("routing-keys")
 
-	return monitorCmd
-}
-
-func init() {
-	rootCmd.AddCommand(NewMonitorCmd())
+	return cmd
 }

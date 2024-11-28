@@ -47,7 +47,3 @@ This command checks for updates, downloads the new version, and replaces the cur
 
 	return updateCmd
 }
-
-func init() {
-	rootCmd.AddCommand(NewUpdateCmd())
-}
