@@ -47,9 +47,12 @@ var RootCmd = &cobra.Command{
 	Long:  logo + "\n\nThis application connects to a RabbitMQ server and dumps queue messages to a file.",
 
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		if err := validation.ValidateInput(); err != nil {
-			color.Red("Validation error: %v", err)
-			os.Exit(1)
+		switch cmd.Use {
+		case "dump", "monitor":
+			if err := validation.ValidateInput(); err != nil {
+				color.Red("Validation error: %v", err)
+				os.Exit(1)
+			}
 		}
 		return nil
 	},
