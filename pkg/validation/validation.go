@@ -39,7 +39,7 @@ func validateURL() error {
 		return fmt.Errorf("RabbitMQ URL is required")
 	}
 	protocol := "amqp"
-	if viper.GetBool("amqps") {
+	if viper.GetBool("secure") {
 		protocol = "amqps"
 	}
 	if _, err := url.Parse(fmt.Sprintf("%s://%s", protocol, urlStr)); err != nil {
@@ -49,8 +49,10 @@ func validateURL() error {
 }
 
 func validateVirtualHost() error {
-	if vh := viper.GetString("virtualhost"); vh != "" && strings.HasPrefix(vh, "/") {
-		return fmt.Errorf("virtual host should not start with '/'")
+	vh := viper.GetString("virtualhost")
+	// Allow "/" as it's the default virtual host in RabbitMQ
+	if vh != "" && vh != "/" && strings.HasPrefix(vh, "/") {
+		return fmt.Errorf("virtual host should not start with '/' (except for the default '/' virtual host)")
 	}
 	return nil
 }

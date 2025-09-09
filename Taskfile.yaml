@@ -1,0 +1,131 @@
+version: '3'
+
+tasks:
+  build:
+    desc: Build the goq binary
+    cmds:
+      - go build -o goq .
+
+  run:
+    desc: Run goq directly
+    cmds:
+      - go run main.go {{.CLI_ARGS}}
+
+  test:
+    desc: Run all tests
+    cmds:
+      - go test ./... -v
+
+  test-verbose:
+    desc: Run tests with verbose output
+    cmds:
+      - go test -v ./...
+
+  fmt:
+    desc: Format Go code
+    cmds:
+      - go fmt ./...
+
+  vet:
+    desc: Check code for issues
+    cmds:
+      - go vet ./...
+
+  tidy:
+    desc: Clean up dependencies
+    cmds:
+      - go mod tidy
+
+  docs:
+    desc: Generate documentation
+    cmds:
+      - go run gen/doc.go
+
+  help:
+    desc: Show goq help
+    cmds:
+      - ./goq --help
+
+  monitor-help:
+    desc: Show monitor command help
+    cmds:
+      - ./goq monitor --help
+
+  dump-help:
+    desc: Show dump command help
+    cmds:
+      - ./goq dump --help
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -f goq
+
+  dev:
+    desc: Build and test help (quick dev check)
+    cmds:
+      - task: build
+      - task: help
+
+  check:
+    desc: Run all code quality checks
+    cmds:
+      - task: fmt
+      - task: vet
+      - task: tidy
+      - task: test
+
+  all:
+    desc: Build, test, and generate docs
+    cmds:
+      - task: build
+      - task: test
+      - task: docs
+
+  release:
+    desc: Create a new release (requires VERSION env var, e.g., VERSION=v1.2.3)
+    cmds:
+      - |
+        if [ -z "$$VERSION" ]; then
+          echo "Error: VERSION environment variable is required"
+          echo "Usage: VERSION=v1.2.3 task release"
+          exit 1
+        fi
+      - echo "Creating release $$VERSION..."
+      - task: check
+      - git tag -a $$VERSION -m "Release $$VERSION"
+      - git push origin $$VERSION
+      - echo "Release $$VERSION created and pushed. GitHub Actions will handle the rest."
+
+  release-patch:
+    desc: Create a patch release (automatically increments patch version)
+    cmds:
+      - |
+        CURRENT_VERSION=$$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+        CURRENT_VERSION=$${CURRENT_VERSION#v}
+        IFS='.' read -r MAJOR MINOR PATCH <<< "$$CURRENT_VERSION"
+        NEW_VERSION="v$$MAJOR.$$MINOR.$$((PATCH + 1))"
+        echo "Creating patch release: $$NEW_VERSION"
+        VERSION=$$NEW_VERSION task: release
+
+  release-minor:
+    desc: Create a minor release (automatically increments minor version)
+    cmds:
+      - |
+        CURRENT_VERSION=$$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+        CURRENT_VERSION=$${CURRENT_VERSION#v}
+        IFS='.' read -r MAJOR MINOR PATCH <<< "$$CURRENT_VERSION"
+        NEW_VERSION="v$$MAJOR.$$((MINOR + 1)).0"
+        echo "Creating minor release: $$NEW_VERSION"
+        VERSION=$$NEW_VERSION task: release
+
+  release-major:
+    desc: Create a major release (automatically increments major version)
+    cmds:
+      - |
+        CURRENT_VERSION=$$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+        CURRENT_VERSION=$${CURRENT_VERSION#v}
+        IFS='.' read -r MAJOR MINOR PATCH <<< "$$CURRENT_VERSION"
+        NEW_VERSION="v$$((MAJOR + 1)).0.0"
+        echo "Creating major release: $$NEW_VERSION"
+        VERSION=$$NEW_VERSION task: release

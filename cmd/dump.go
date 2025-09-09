@@ -30,10 +30,17 @@ import (
 // NewDumpCmd creates the `dump` command.
 func NewDumpCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "dump",
-		Short:   "Dump messages from a RabbitMQ queue",
-		Long:    "Dump messages from a specified RabbitMQ queue with flexible filtering and output options.",
-		Example: "goq dump -q my_queue -o output.txt",
+		Use:   "dump",
+		Short: "Dump messages from a RabbitMQ queue",
+		Long:  "Dump messages from a specified RabbitMQ queue with flexible filtering and output options.",
+		Example: `  # Dump messages from a queue to file
+  goq dump -q "my_queue" -o messages.json -p
+
+  # Dump with filtering and auto-acknowledge
+  goq dump -q "orders" -a -i "urgent" -o urgent_orders.log
+
+  # Dump from secure connection with full message details
+  goq dump -q "events" -s -k -f -o events_full.json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return app.Dump(config.CreateCommonConfig(cmd))
 		},
@@ -42,6 +49,7 @@ func NewDumpCmd() *cobra.Command {
 	cmd.Flags().StringP("queue", "q", "", "RabbitMQ queue name (required)")
 	cmd.Flags().BoolP("auto-ack", "a", false, "Automatically acknowledge messages")
 	cmd.Flags().BoolP("stop-after-consume", "c", false, "Stop after consuming messages")
+	cmd.Flags().BoolP("full-message", "f", false, "Print complete message details")
 	cmd.MarkFlagRequired("queue")
 
 	return cmd

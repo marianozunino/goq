@@ -6,27 +6,81 @@ import (
 
 	"github.com/marianozunino/goq/internal/config"
 	"github.com/marianozunino/goq/internal/model"
-	"github.com/streadway/amqp"
+	"github.com/wagslane/go-rabbitmq"
+)
+
+// ExporterError represents different types of exporter errors
+type ExporterError struct {
+	Type string
+	Err  error
+}
+
+func (e *ExporterError) Error() string {
+	return fmt.Sprintf("%s error: %v", e.Type, e.Err)
+}
+
+func (e *ExporterError) Unwrap() error {
+	return e.Err
+}
+
+// Error types
+const (
+	ErrorTypeSerialization = "serialization"
+	ErrorTypeFileIO        = "file_io"
+	ErrorTypeConsoleIO     = "console_io"
+	ErrorTypeConfiguration = "configuration"
 )
 
 type Exporter interface {
-	WriteMessage(msg amqp.Delivery) error
+	WriteMessage(msg rabbitmq.Delivery) error
 	Close() error
 }
 
-func NewExporter(cfg *config.Config) (Exporter, error) {
+// ExporterFactory defines the interface for creating exporters
+type ExporterFactory interface {
+	CreateExporter(cfg *config.Config) (Exporter, error)
+	GetType() string
+}
+
+// DefaultExporterFactory implements the factory pattern
+type DefaultExporterFactory struct{}
+
+func (f *DefaultExporterFactory) GetType() string {
+	return "default"
+}
+
+func (f *DefaultExporterFactory) CreateExporter(cfg *config.Config) (Exporter, error) {
 	switch cfg.Writer {
 	case config.ConsoleExporterKind:
 		return NewConsoleExporter(cfg)
 	case config.FileWriterKind:
 		return NewFileWriter(cfg)
 	default:
-		return nil, fmt.Errorf("unknown writer kind: %s", cfg.Writer)
+		return nil, &ExporterError{
+			Type: ErrorTypeConfiguration,
+			Err:  fmt.Errorf("unknown writer kind: %s", cfg.Writer),
+		}
 	}
 }
 
+// Registry for exporter factories
+var exporterFactories = map[string]ExporterFactory{
+	"default": &DefaultExporterFactory{},
+}
+
+// RegisterExporterFactory allows adding new exporter types
+func RegisterExporterFactory(name string, factory ExporterFactory) {
+	exporterFactories[name] = factory
+}
+
+// NewExporter creates an exporter using the default factory
+func NewExporter(cfg *config.Config) (Exporter, error) {
+	factory := exporterFactories["default"]
+	return factory.CreateExporter(cfg)
+}
+
 // convertHeaders converts AMQP headers to a map[string]interface{}
-func convertHeaders(amqpHeaders amqp.Table) map[string]interface{} {
+func convertHeaders(amqpHeaders rabbitmq.Table) map[string]interface{} {
 	if amqpHeaders == nil {
 		return nil
 	}
@@ -39,16 +93,14 @@ func convertHeaders(amqpHeaders amqp.Table) map[string]interface{} {
 }
 
 // writeMessageCommon handles the message creation and serialization
-func writeMessageCommon(msg amqp.Delivery, prettyPrint bool) ([]byte, error) {
-	// Create a new Message struct with AMQP delivery details
+func writeMessageCommon(msg rabbitmq.Delivery, prettyPrint bool) ([]byte, error) {
 	message := model.Message{
-		Headers:    convertHeaders(msg.Headers),
+		Headers:    convertHeaders(rabbitmq.Table(msg.Headers)),
 		Exchange:   msg.Exchange,
 		RoutingKey: msg.RoutingKey,
 		Body:       msg.Body,
 	}
 
-	// Prepare output based on pretty print config
 	var output []byte
 	var err error
 	if prettyPrint {
@@ -58,10 +110,12 @@ func writeMessageCommon(msg amqp.Delivery, prettyPrint bool) ([]byte, error) {
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal message: %v", err)
+		return nil, &ExporterError{
+			Type: ErrorTypeSerialization,
+			Err:  fmt.Errorf("failed to marshal message: %v", err),
+		}
 	}
 
-	// Always append a newline
 	output = append(output, '\n')
 
 	return output, nil

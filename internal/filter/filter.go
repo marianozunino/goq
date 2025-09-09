@@ -7,10 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/itchyny/gojq"
 	"github.com/marianozunino/goq/internal/config"
-	"github.com/streadway/amqp"
 )
 
 type MessageFilter struct {
@@ -54,10 +52,8 @@ func (f *MessageFilter) compilePatterns(cfg *config.Config) {
 	f.excludePatterns = make([]*regexp.Regexp, 0, len(cfg.FilterConfig.ExcludePatterns))
 	for _, pattern := range cfg.FilterConfig.ExcludePatterns {
 		if regex, err := regexp.Compile(pattern); err != nil {
-			spew.Dump(err)
 			f.compilationErrors = append(f.compilationErrors, fmt.Errorf("invalid exclude pattern: %v", err))
 		} else {
-			spew.Dump(regex)
 			f.excludePatterns = append(f.excludePatterns, regex)
 		}
 	}
@@ -82,16 +78,21 @@ func (f *MessageFilter) compilePatterns(cfg *config.Config) {
 	}
 }
 
-func (f *MessageFilter) Filter(msg *amqp.Delivery) bool {
+// MessageDelivery represents a message that can be filtered
+type MessageDelivery interface {
+	GetBody() []byte
+}
+
+func (f *MessageFilter) Filter(msg MessageDelivery) bool {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
 	// Size filter
-	if f.maxMessageSize > 0 && len(msg.Body) > f.maxMessageSize {
+	if f.maxMessageSize > 0 && len(msg.GetBody()) > f.maxMessageSize {
 		return false
 	}
 
-	body := string(msg.Body)
+	body := string(msg.GetBody())
 
 	// Regex filter
 	if f.regexFilter != nil && !f.regexFilter.MatchString(body) {
@@ -112,7 +113,7 @@ func (f *MessageFilter) Filter(msg *amqp.Delivery) bool {
 
 	// JSON filter
 	if f.jsonFilter != nil {
-		return f.matchJSONFilter(msg.Body)
+		return f.matchJSONFilter(msg.GetBody())
 	}
 
 	return true

@@ -1,14 +1,16 @@
 package exporter
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 
 	"github.com/marianozunino/goq/internal/config"
-	"github.com/streadway/amqp"
+	"github.com/wagslane/go-rabbitmq"
 )
 
 type FileExporter struct {
+	writer *bufio.Writer
 	file   *os.File
 	config *config.Config
 }
@@ -26,29 +28,63 @@ func NewFileWriter(cfg *config.Config) (*FileExporter, error) {
 	case "overwrite", "":
 		file, err = os.Create(cfg.OutputFile)
 	default:
-		return nil, fmt.Errorf("invalid file mode: %s (use 'append' or 'overwrite')", cfg.FileMode)
+		return nil, &ExporterError{
+			Type: ErrorTypeConfiguration,
+			Err:  fmt.Errorf("invalid file mode: %s (use 'append' or 'overwrite')", cfg.FileMode),
+		}
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to open/create output file: %v", err)
+		return nil, &ExporterError{
+			Type: ErrorTypeFileIO,
+			Err:  fmt.Errorf("failed to open/create output file: %v", err),
+		}
 	}
+
+	writer := bufio.NewWriter(file)
+
 	return &FileExporter{
+		writer: writer,
 		file:   file,
 		config: cfg,
 	}, nil
 }
 
-func (w *FileExporter) WriteMessage(msg amqp.Delivery) error {
+func (w *FileExporter) WriteMessage(msg rabbitmq.Delivery) error {
 	output, err := writeMessageCommon(msg, w.config.PrettyPrint)
 	if err != nil {
 		return err
 	}
 
-	// Write to file
-	_, err = w.file.Write(output)
-	return err
+	_, err = w.writer.Write(output)
+	if err != nil {
+		return &ExporterError{
+			Type: ErrorTypeFileIO,
+			Err:  fmt.Errorf("failed to write to file: %v", err),
+		}
+	}
+
+	if err := w.writer.Flush(); err != nil {
+		return &ExporterError{
+			Type: ErrorTypeFileIO,
+			Err:  fmt.Errorf("failed to flush buffer: %v", err),
+		}
+	}
+
+	return nil
 }
 
 func (w *FileExporter) Close() error {
-	return w.file.Close()
+	if err := w.writer.Flush(); err != nil {
+		return &ExporterError{
+			Type: ErrorTypeFileIO,
+			Err:  fmt.Errorf("failed to flush buffer on close: %v", err),
+		}
+	}
+	if err := w.file.Close(); err != nil {
+		return &ExporterError{
+			Type: ErrorTypeFileIO,
+			Err:  fmt.Errorf("failed to close file: %v", err),
+		}
+	}
+	return nil
 }
-
