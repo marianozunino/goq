@@ -266,7 +266,7 @@ Filters:
 }
 
 func getProtocol() string {
-	if viper.GetBool("amqps") {
+	if viper.GetBool("secure") {
 		return "amqps"
 	}
 	return "amqp"

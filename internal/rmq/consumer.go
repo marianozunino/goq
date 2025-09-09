@@ -2,21 +2,20 @@ package rmq
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
-	"github.com/fatih/color"
 	"github.com/marianozunino/goq/internal/config"
 	"github.com/marianozunino/goq/internal/filter"
-	"github.com/streadway/amqp"
+	"github.com/wagslane/go-rabbitmq"
 )
 
 type Consumer struct {
-	conn   *amqp.Connection
-	ch     *amqp.Channel
-	config *config.Config
-	filter *filter.MessageFilter
+	conn     *rabbitmq.Conn
+	consumer *rabbitmq.Consumer
+	config   *config.Config
+	filter   *filter.MessageFilter
 
 	totalMessages    int
 	consumedMessages int
@@ -27,7 +26,7 @@ type ConsumerStatus struct {
 	ConsumedMessages int
 	FilteredMessages int
 	Complete         bool
-	Message          *amqp.Delivery
+	Message          *rabbitmq.Delivery
 }
 
 func NewConsumer(cfg *config.Config) (*Consumer, error) {
@@ -36,130 +35,194 @@ func NewConsumer(cfg *config.Config) (*Consumer, error) {
 		return nil, errors.Join(errs...)
 	}
 
-	var conn *amqp.Connection
+	// Create connection with TLS support
+	var conn *rabbitmq.Conn
 	var err error
+
 	if cfg.SkipTLSVerification {
 		tlsConfig := &tls.Config{InsecureSkipVerify: true}
-		conn, err = amqp.DialTLS(cfg.RabbitMQURL, tlsConfig)
+		conn, err = rabbitmq.NewConn(
+			cfg.RabbitMQURL,
+			rabbitmq.WithConnectionOptionsLogging,
+			rabbitmq.WithConnectionOptionsConfig(rabbitmq.Config{
+				TLSClientConfig: tlsConfig,
+			}),
+		)
 	} else {
-		conn, err = amqp.Dial(cfg.RabbitMQURL)
+		conn, err = rabbitmq.NewConn(
+			cfg.RabbitMQURL,
+			rabbitmq.WithConnectionOptionsLogging,
+		)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to RabbitMQ: %v", err)
 	}
 
-	ch, err := conn.Channel()
-	if err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("failed to open channel: %v", err)
-	}
-
 	c := &Consumer{
 		conn:   conn,
-		ch:     ch,
 		config: cfg,
 		filter: msgFilter,
 	}
 
+	// Handle queue setup
 	if c.config.Queue == "" {
-		queue, err := c.declareTemporaryQueue()
-		if err != nil {
-			return nil, fmt.Errorf("failed to declare temporary queue: %v", err)
-		}
-		c.config.Queue = queue.Name
 		c.config.AutoAck = true
-
-		err = c.bindQueueToRoutingKeys(queue.Name)
-		if err != nil {
-			return nil, fmt.Errorf("failed to bind queue to routing keys: %v", err)
-		}
-	}
-
-	if err = c.ch.QueueBind(c.config.Queue, "", c.config.Exchange, false, nil); err != nil {
-		return nil, fmt.Errorf("failed to bind queue: %v", err)
-	}
-
-	queue, err := c.ch.QueueInspect(c.config.Queue)
-	c.totalMessages = int(queue.Messages)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to inspect queue: %v", err)
 	}
 
 	return c, nil
 }
 
-// DeclareTemporaryQueue creates a temporary queue that will be deleted when the consumer disconnects
-func (c *Consumer) declareTemporaryQueue() (amqp.Queue, error) {
-	fmt.Println("Declaring a temporary queue")
-	return c.ch.QueueDeclare(
-		"",    // Generate a random name for the queue
-		false, // Durable
-		true,  // Delete when unused
-		true,  // Exclusive
-		false, // No-wait
-		nil,   // Arguments
-	)
-}
-
+// Consume starts consuming messages and returns a channel for status updates
 func (c *Consumer) Consume() (<-chan ConsumerStatus, error) {
-	msgs, err := c.ch.Consume(
-		c.config.Queue,
-		"",
-		c.config.AutoAck,
-		false,
-		false,
-		false,
-		nil,
+	statusCh := make(chan ConsumerStatus)
+
+	// Prepare consumer options
+	var consumerOptions []func(*rabbitmq.ConsumerOptions)
+
+	// Handle queue creation - if no queue name is provided, create a temporary queue
+	queueName := c.config.Queue
+	if queueName == "" {
+		consumerOptions = append(consumerOptions,
+			rabbitmq.WithConsumerOptionsQueueAutoDelete,
+			rabbitmq.WithConsumerOptionsQueueExclusive,
+		)
+		queueName = ""
+	}
+
+	// Add routing keys if specified
+	for _, routingKey := range c.config.RoutingKeys {
+		consumerOptions = append(consumerOptions,
+			rabbitmq.WithConsumerOptionsRoutingKey(routingKey))
+	}
+
+	// Add exchange configuration
+	if c.config.Exchange != "" {
+		consumerOptions = append(consumerOptions,
+			rabbitmq.WithConsumerOptionsExchangeName(c.config.Exchange),
+		)
+	}
+
+	// Create consumer
+	consumer, err := rabbitmq.NewConsumer(
+		c.conn,
+		queueName,
+		consumerOptions...,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to register consumer: %v", err)
+		close(statusCh)
+		return nil, fmt.Errorf("failed to create consumer: %v", err)
 	}
-	statusCh := make(chan ConsumerStatus)
-	go func(c *Consumer) {
+
+	c.consumer = consumer
+
+	if queueName == "" {
+		fmt.Println("✅ Temporary queue created with random name (managed by go-rabbitmq)")
+	} else {
+		fmt.Printf("✅ Connected to queue: %s\n", queueName)
+	}
+
+	if len(c.config.RoutingKeys) > 0 {
+		fmt.Printf("✅ Bound to routing keys: %v\n", c.config.RoutingKeys)
+	}
+	if c.config.Exchange != "" {
+		fmt.Printf("✅ Connected to exchange: %s\n", c.config.Exchange)
+	}
+
+	go func() {
 		defer close(statusCh)
 		filteredCount := 0
-		for msg := range msgs {
+
+		err := consumer.Run(func(d rabbitmq.Delivery) rabbitmq.Action {
 			c.consumedMessages++
-			var filteredMsg *amqp.Delivery
-			if c.filter.Filter(&msg) {
-				filteredMsg = &msg
+			var filteredMsg *rabbitmq.Delivery
+
+			if c.filter.Filter(convertDelivery(&d)) {
+				filteredMsg = &d
 			} else {
 				filteredCount++
 			}
 
-			// Send status update
 			statusCh <- ConsumerStatus{
 				TotalMessages:    c.totalMessages,
 				ConsumedMessages: c.consumedMessages,
 				FilteredMessages: filteredCount,
-				Complete:         c.consumedMessages == c.totalMessages,
+				Complete:         false,
 				Message:          filteredMsg,
 			}
 
-			if c.consumedMessages == c.totalMessages {
-				break
+			if c.config.AutoAck {
+				return rabbitmq.Ack
 			}
+			return rabbitmq.Ack
+		})
+
+		if err != nil {
+			fmt.Printf("Consumer error: %v\n", err)
 		}
-	}(c)
+	}()
+
 	return statusCh, nil
 }
 
-// bindQueueToRoutingKeys binds the queue to specified routing keys
-func (c *Consumer) bindQueueToRoutingKeys(queueName string) error {
-	for _, routingKey := range c.config.RoutingKeys {
-		routingKeyTrimmed := strings.TrimSpace(routingKey)
-		if err := c.ch.QueueBind(
-			queueName,
-			routingKey,
-			c.config.Exchange,
-			false,
-			nil,
-		); err != nil {
-			return fmt.Errorf("failed to bind queue %q to routing key %q: %v", queueName, routingKeyTrimmed, err)
-		}
-		color.Yellow("Bound routing key %q", routingKey)
-		color.Green("Binding queue %q to routing keys", queueName)
+// Close closes the consumer and connection
+func (c *Consumer) Close() error {
+	if c.consumer != nil {
+		c.consumer.Close()
+	}
+	if c.conn != nil {
+		c.conn.Close()
 	}
 	return nil
+}
+
+// convertDelivery converts rabbitmq.Delivery to amqp.Delivery for compatibility with existing filter
+func convertDelivery(d *rabbitmq.Delivery) *amqpDelivery {
+	message := struct {
+		Headers    map[string]interface{} `json:"headers"`
+		Exchange   string                 `json:"exchange"`
+		RoutingKey string                 `json:"routingKey"`
+		Body       interface{}            `json:"body"`
+	}{
+		Headers:    convertHeaders(rabbitmq.Table(d.Headers)),
+		Exchange:   d.Exchange,
+		RoutingKey: d.RoutingKey,
+		Body:       parseBody(d.Body),
+	}
+
+	jsonBytes, _ := json.Marshal(message)
+
+	return &amqpDelivery{
+		Body: jsonBytes,
+	}
+}
+
+// convertHeaders converts rabbitmq.Table to map[string]interface{}
+func convertHeaders(headers rabbitmq.Table) map[string]interface{} {
+	if headers == nil {
+		return nil
+	}
+	result := make(map[string]interface{})
+	for k, v := range headers {
+		result[k] = v
+	}
+	return result
+}
+
+// parseBody attempts to parse the body as JSON, falls back to string
+func parseBody(body []byte) interface{} {
+	var jsonData interface{}
+	if err := json.Unmarshal(body, &jsonData); err != nil {
+		return string(body)
+	}
+	return jsonData
+}
+
+// amqpDelivery is a minimal adapter to make rabbitmq.Delivery compatible with the existing filter
+type amqpDelivery struct {
+	Body []byte
+}
+
+// GetBody implements the MessageDelivery interface
+func (d *amqpDelivery) GetBody() []byte {
+	return d.Body
 }

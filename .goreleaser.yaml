@@ -1,34 +1,37 @@
 version: 2
 
+# Enable UPX compression for smaller binaries
 upx:
   - enabled: true
-    goos: [linux, darwin]
-    compress: best
-    lzma: true
 
+# Pre-release hooks
 before:
   hooks:
     - go mod tidy
     - go generate ./...
+
+# Build configuration
 builds:
   - env:
       - CGO_ENABLED=0
     goos:
       - linux
       - darwin
-    ldflags: >-
-      -s -w
-      -X github.com/marianozunino/goq/cmd.Version={{.Version}}
-      -extldflags '-static'
+      - windows
+    ldflags:
+      - -s -w
+      - -X github.com/marianozunino/goq/cmd.Version={{.Version}}
     flags:
       - -trimpath
 
+# Release configuration
 release:
   github:
     owner: marianozunino
     name: goq
   name_template: "{{.ProjectName}} v{{.Version}}"
-  disable: false
+
+# Archive configuration - maintain compatibility with selfupdater
 archives:
   - format: tar.gz
     name_template: >-
@@ -41,6 +44,8 @@ archives:
     format_overrides:
       - goos: windows
         format: zip
+
+# Changelog configuration
 changelog:
   sort: asc
   filters:

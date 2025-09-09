@@ -34,13 +34,20 @@ func NewMonitorCmd() *cobra.Command {
 		Aliases: []string{"mon"},
 		Short:   "Monitor RabbitMQ messages using routing keys",
 		Long:    "Monitor RabbitMQ messages by consuming from a temporary queue with specified routing keys.",
-		Example: "goq monitor -r \"user.created,user.updated\" -o output.txt",
+		Example: `  # Monitor all messages from an exchange
+  goq monitor -K "#" -e "my_exchange" -w console -p
+
+  # Monitor specific routing keys with filtering
+  goq monitor -K "user.created,user.updated" -e "events" -i "admin" -o users.log
+
+  # Monitor with secure connection
+  goq monitor -K "order.*" -e "orders" -s -k -u "rabbitmq.example.com:5671"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return app.Monitor(config.CreateCommonConfig(cmd))
 		},
 	}
 
-	cmd.Flags().StringSliceP("routing-keys", "r", nil, "List of routing keys to monitor (required)")
+	cmd.Flags().StringSliceP("routing-keys", "K", nil, "List of routing keys to monitor (required)")
 	cmd.Flags().BoolP("auto-ack", "a", false, "Automatically acknowledge messages")
 	cmd.MarkFlagRequired("routing-keys")
 

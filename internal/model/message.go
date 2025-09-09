@@ -64,4 +64,3 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 
 	return nil
 }
-

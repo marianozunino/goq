@@ -32,21 +32,27 @@ func InitConfig() {
 }
 
 func SetupFlags(flags *pflag.FlagSet, validWriters, validFileModes []string) {
-	flags.StringP("exchange", "e", "", "RabbitMQ exchange name")
+	// Connection Options
 	flags.StringP("url", "u", defaultURL, "RabbitMQ server URL")
 	flags.StringP("virtualhost", "v", defaultVirtualHost, "RabbitMQ virtual host")
-	flags.BoolP("amqps", "s", false, "Use AMQPS instead of AMQP")
-	flags.BoolP("tls-skip", "k", false, "Skip TLS certificate verification")
+	flags.StringP("exchange", "e", "", "RabbitMQ exchange name")
+	flags.BoolP("secure", "s", false, "Use AMQPS (secure) instead of AMQP")
+	flags.BoolP("insecure", "k", false, "Skip TLS certificate verification")
+
+	// Output Options
 	flags.StringP("writer", "w", "file", fmt.Sprintf("Output writer type (%s)", strings.Join(validWriters, " or ")))
 	flags.StringP("output", "o", "", "Output file name")
 	flags.StringP("file-mode", "m", "overwrite", fmt.Sprintf("File mode (%s)", strings.Join(validFileModes, " or ")))
 	flags.BoolP("pretty-print", "p", false, "Pretty print JSON messages")
-	flags.BoolP("full-message", "f", false, "Print complete message details")
+
+	// Filter Options (Advanced)
 	flags.StringSliceP("include-patterns", "i", []string{}, "Include messages containing these patterns")
 	flags.StringSliceP("exclude-patterns", "x", []string{}, "Exclude messages containing these patterns")
 	flags.StringP("json-filter", "j", "", "JSON filter expression")
-	flags.StringP("regex-filter", "R", "", "Regex pattern to filter messages")
+	flags.StringP("regex-filter", "r", "", "Regex pattern to filter messages")
 	flags.IntP("max-message-size", "z", -1, "Maximum message size in bytes (-1 for unlimited)")
+
+	// Configuration
 	flags.String("config", xdg.ConfigHome+"/goq/goq.yaml", "Config file path")
 
 	viper.BindPFlags(flags)
@@ -57,9 +63,10 @@ func CreateCommonConfig(cmd *cobra.Command) *config.Config {
 	routingKeys, _ := cmd.Flags().GetStringSlice("routing-keys")
 	autoAck, _ := cmd.Flags().GetBool("auto-ack")
 	stopAfterConsume, _ := cmd.Flags().GetBool("stop-after-consume")
+	fullMessage, _ := cmd.Flags().GetBool("full-message")
 
 	protocol := "amqp"
-	if viper.GetBool("amqps") {
+	if viper.GetBool("secure") {
 		protocol = "amqps"
 	}
 
@@ -67,7 +74,7 @@ func CreateCommonConfig(cmd *cobra.Command) *config.Config {
 		config.WithRabbitMQURL(fmt.Sprintf("%s://%s/%s", protocol, viper.GetString("url"), viper.GetString("virtualhost"))),
 		config.WithExchange(viper.GetString("exchange")),
 		config.WithVirtualHost(viper.GetString("virtualhost")),
-		config.WithSkipTLSVerification(viper.GetBool("tls-skip")),
+		config.WithSkipTLSVerification(viper.GetBool("insecure")),
 		config.WithQueue(queue),
 		config.WithRoutingKeys(routingKeys),
 		config.WithAutoAck(autoAck),
@@ -76,10 +83,7 @@ func CreateCommonConfig(cmd *cobra.Command) *config.Config {
 		config.WithFileMode(viper.GetString("file-mode")),
 		config.WithWriter(viper.GetString("writer")),
 		config.WithPrettyPrint(viper.GetBool("pretty-print")),
-		config.WithQueue(queue),
-		config.WithStopAfterConsume(stopAfterConsume),
-		config.WithAutoAck(autoAck),
-		config.WithFullMessage(viper.GetBool("full-message")),
+		config.WithFullMessage(fullMessage),
 		config.WithIncludePatterns(viper.GetStringSlice("include-patterns")),
 		config.WithExcludePatterns(viper.GetStringSlice("exclude-patterns")),
 		config.WithMaxMessageSize(viper.GetInt("max-message-size")),

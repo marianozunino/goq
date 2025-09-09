@@ -2,7 +2,7 @@
 exchange: "my_exchange"
 
 # Use AMQPS instead of AMQP
-amqps: false
+secure: false
 
 # RabbitMQ server URL
 url: "localhost:5672"

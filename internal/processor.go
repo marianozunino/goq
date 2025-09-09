@@ -71,7 +71,7 @@ func (mp *MessageProcessor) Monitor() error {
 		return fmt.Errorf("failed to consume messages: %v", err)
 	}
 
-	return mp.processMessages(msgs)
+	return mp.endlessConsume(msgs)
 }
 
 func (mp *MessageProcessor) processMessages(status <-chan rmq.ConsumerStatus) error {
@@ -96,6 +96,27 @@ func (mp *MessageProcessor) processMessages(status <-chan rmq.ConsumerStatus) er
 			fmt.Println()
 			color.Green("Message processing complete.")
 			return nil
+		}
+	}
+	return nil
+}
+
+func (mp *MessageProcessor) endlessConsume(status <-chan rmq.ConsumerStatus) error {
+	blue := color.New(color.FgBlue)
+	for s := range status {
+		// when message is null is because the message was filtered
+		if s.Message != nil {
+			if err := mp.exporter.WriteMessage(*s.Message); err != nil {
+				log.Printf("Failed to write message: %v", err)
+				continue
+			}
+
+			switch mp.config.Writer {
+			case config.FileWriterKind:
+				blue.Printf("\rMessages processed: %d", s.ConsumedMessages)
+			case config.ConsoleExporterKind:
+				blue.Println("*****")
+			}
 		}
 	}
 	return nil

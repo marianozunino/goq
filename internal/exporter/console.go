@@ -1,10 +1,11 @@
 package exporter
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/marianozunino/goq/internal/config"
-	"github.com/streadway/amqp"
+	"github.com/wagslane/go-rabbitmq"
 )
 
 type ConsoleExporter struct {
@@ -19,7 +20,7 @@ func NewConsoleExporter(cfg *config.Config) (*ConsoleExporter, error) {
 	}, nil
 }
 
-func (w *ConsoleExporter) WriteMessage(msg amqp.Delivery) error {
+func (w *ConsoleExporter) WriteMessage(msg rabbitmq.Delivery) error {
 	output, err := writeMessageCommon(msg, w.config.PrettyPrint)
 	if err != nil {
 		return err
@@ -27,11 +28,16 @@ func (w *ConsoleExporter) WriteMessage(msg amqp.Delivery) error {
 
 	// Write to stdout
 	_, err = os.Stdout.Write(output)
-	return err
+	if err != nil {
+		return &ExporterError{
+			Type: ErrorTypeConsoleIO,
+			Err:  fmt.Errorf("failed to write to console: %v", err),
+		}
+	}
+	return nil
 }
 
 func (w *ConsoleExporter) Close() error {
 	// No-op for console writer
 	return nil
 }
-
