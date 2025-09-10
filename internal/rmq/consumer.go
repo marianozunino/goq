@@ -8,6 +8,7 @@ import (
 
 	"github.com/marianozunino/goq/internal/config"
 	"github.com/marianozunino/goq/internal/filter"
+	"github.com/rabbitmq/amqp091-go"
 	"github.com/wagslane/go-rabbitmq"
 )
 
@@ -87,6 +88,11 @@ func (c *Consumer) Consume() (<-chan ConsumerStatus, error) {
 			rabbitmq.WithConsumerOptionsQueueExclusive,
 		)
 		queueName = ""
+	} else {
+		// For named queues, make them durable to match existing queue configurations
+		consumerOptions = append(consumerOptions,
+			rabbitmq.WithConsumerOptionsQueueDurable,
+		)
 	}
 
 	// Add routing keys if specified
@@ -115,6 +121,45 @@ func (c *Consumer) Consume() (<-chan ConsumerStatus, error) {
 
 	c.consumer = consumer
 
+	// Get queue message count after consumer is created (for no-ack mode with StopAfterConsume)
+	if !c.config.AutoAck && c.config.StopAfterConsume && queueName != "" {
+		// Get queue info to determine message count using amqp091-go directly
+		// Use the same TLS configuration as the main connection
+		var conn *amqp091.Connection
+		var err error
+
+		if c.config.SkipTLSVerification {
+			// Configure TLS for secure connections with skip verification
+			tlsConfig := &tls.Config{InsecureSkipVerify: true}
+			conn, err = amqp091.DialTLS(c.config.RabbitMQURL, tlsConfig)
+		} else {
+			conn, err = amqp091.Dial(c.config.RabbitMQURL)
+		}
+
+		if err != nil {
+			close(statusCh)
+			return nil, fmt.Errorf("failed to connect for queue info: %v", err)
+		}
+		defer conn.Close()
+
+		ch, err := conn.Channel()
+		if err != nil {
+			close(statusCh)
+			return nil, fmt.Errorf("failed to get channel for queue info: %v", err)
+		}
+		defer ch.Close()
+
+		queue, err := ch.QueueInspect(queueName)
+		if err != nil {
+			// Queue might not exist yet, that's okay - we'll set totalMessages to 0
+			c.totalMessages = 0
+			fmt.Printf("📊 Queue %s not found or empty\n", queueName)
+		} else {
+			c.totalMessages = queue.Messages
+			fmt.Printf("📊 Queue has %d messages\n", c.totalMessages)
+		}
+	}
+
 	if queueName == "" {
 		fmt.Println("✅ Temporary queue created with random name (managed by go-rabbitmq)")
 	} else {
@@ -131,9 +176,11 @@ func (c *Consumer) Consume() (<-chan ConsumerStatus, error) {
 	go func() {
 		defer close(statusCh)
 		filteredCount := 0
+		messageCount := 0
 
 		err := consumer.Run(func(d rabbitmq.Delivery) rabbitmq.Action {
 			c.consumedMessages++
+			messageCount++
 			var filteredMsg *rabbitmq.Delivery
 
 			if c.filter.Filter(convertDelivery(&d)) {
@@ -150,10 +197,22 @@ func (c *Consumer) Consume() (<-chan ConsumerStatus, error) {
 				Message:          filteredMsg,
 			}
 
+			// For no-ack mode with StopAfterConsume, stop when we've processed enough messages
+			if !c.config.AutoAck && c.config.StopAfterConsume && c.totalMessages > 0 && messageCount >= c.totalMessages {
+				statusCh <- ConsumerStatus{
+					TotalMessages:    c.totalMessages,
+					ConsumedMessages: c.consumedMessages,
+					FilteredMessages: filteredCount,
+					Complete:         true,
+					Message:          nil,
+				}
+				return rabbitmq.NackRequeue
+			}
+
 			if c.config.AutoAck {
 				return rabbitmq.Ack
 			}
-			return rabbitmq.Ack
+			return rabbitmq.NackRequeue
 		})
 
 		if err != nil {

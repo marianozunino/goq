@@ -2,6 +2,7 @@ package rmq
 
 import (
 	"testing"
+	"time"
 
 	"github.com/marianozunino/goq/internal/config"
 	"github.com/marianozunino/goq/internal/testutil"
@@ -330,5 +331,83 @@ func TestConsumer_WithExchange(t *testing.T) {
 		if consumer.config.Exchange != "test-exchange" {
 			t.Errorf("Expected exchange to be 'test-exchange', got '%s'", consumer.config.Exchange)
 		}
+	})
+}
+
+func TestConsumer_AcknowledgmentBehavior(t *testing.T) {
+	testutil.WithRabbitMQTestContainer(t, func(rmq *testutil.RabbitMQTestContainer) {
+		// Test AutoAck: true (should acknowledge messages)
+		t.Run("AutoAck_True", func(t *testing.T) {
+			cfg := &config.Config{
+				RabbitMQURL: rmq.GetConnectionURL(),
+				Queue:       "test-queue-ack-true",
+				AutoAck:     true,
+			}
+
+			consumer, err := NewConsumer(cfg)
+			if err != nil {
+				t.Fatalf("Failed to create consumer: %v", err)
+			}
+
+			statusCh, err := consumer.Consume()
+			if err != nil {
+				t.Fatalf("Failed to start consuming: %v", err)
+			}
+
+			// Close consumer after a short time
+			go func() {
+				time.Sleep(100 * time.Millisecond)
+				consumer.Close()
+			}()
+
+			// Wait for status updates
+			for status := range statusCh {
+				if status.Complete {
+					break
+				}
+			}
+
+			// Verify AutoAck is true
+			if !consumer.config.AutoAck {
+				t.Error("Expected AutoAck to be true")
+			}
+		})
+
+		// Test AutoAck: false (should NOT acknowledge messages)
+		t.Run("AutoAck_False", func(t *testing.T) {
+			cfg := &config.Config{
+				RabbitMQURL: rmq.GetConnectionURL(),
+				Queue:       "test-queue-ack-false",
+				AutoAck:     false,
+			}
+
+			consumer, err := NewConsumer(cfg)
+			if err != nil {
+				t.Fatalf("Failed to create consumer: %v", err)
+			}
+
+			statusCh, err := consumer.Consume()
+			if err != nil {
+				t.Fatalf("Failed to start consuming: %v", err)
+			}
+
+			// Close consumer after a short time
+			go func() {
+				time.Sleep(100 * time.Millisecond)
+				consumer.Close()
+			}()
+
+			// Wait for status updates
+			for status := range statusCh {
+				if status.Complete {
+					break
+				}
+			}
+
+			// Verify AutoAck is false
+			if consumer.config.AutoAck {
+				t.Error("Expected AutoAck to be false")
+			}
+		})
 	})
 }
